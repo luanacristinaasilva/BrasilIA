@@ -3,7 +3,7 @@ import { useProfile } from '../hooks/useProfile'
 import ProfileCard from '../components/profile/ProfileCard'
 import OptInToggle from '../components/profile/OptInToggle'
 import ContributionList from '../components/contributions/ContributionList'
-import { CURRENT_USER_ID } from '../App'
+import { CURRENT_USER_ID } from '../constants'
 import { Link } from 'react-router-dom'
 import { Users } from 'lucide-react'
 

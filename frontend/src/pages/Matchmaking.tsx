@@ -4,7 +4,7 @@ import { useMatchmaking } from '../hooks/useMatchmaking'
 import { useScheduling } from '../hooks/useScheduling'
 import MatchList from '../components/matchmaking/MatchList'
 import ScheduleModal from '../components/scheduling/ScheduleModal'
-import { CURRENT_USER_ID } from '../App'
+import { CURRENT_USER_ID } from '../constants'
 import { MatchResult } from '../types'
 
 export default function Matchmaking() {

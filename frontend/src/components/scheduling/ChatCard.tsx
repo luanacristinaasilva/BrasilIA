@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Send } from 'lucide-react'
 import { ChatMessage } from '../../types'
-import { CURRENT_USER_ID } from '../../App'
+import { CURRENT_USER_ID } from '../../constants'
 
 interface Props {
   messages: ChatMessage[]

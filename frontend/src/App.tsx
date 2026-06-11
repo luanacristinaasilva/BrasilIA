@@ -8,8 +8,8 @@ import Profile from './pages/Profile'
 import Matchmaking from './pages/Matchmaking'
 import Scheduling from './pages/Scheduling'
 
-// Demo: active user (in a real app, this would come from auth)
-export const CURRENT_USER_ID = 'u6'
+import { CURRENT_USER_ID } from './constants'
+export { CURRENT_USER_ID }
 
 export default function App() {
   return (

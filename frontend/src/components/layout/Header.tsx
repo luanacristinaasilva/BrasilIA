@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { Sparkles, Bell, User } from 'lucide-react'
-import { CURRENT_USER_ID } from '../../App'
+import { CURRENT_USER_ID } from '../../constants'
 
 const nav = [
   { to: '/', label: 'Início' },

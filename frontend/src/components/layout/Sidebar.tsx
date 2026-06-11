@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { LayoutDashboard, GitPullRequest, Users, Calendar, Star } from 'lucide-react'
-import { CURRENT_USER_ID } from '../../App'
+import { CURRENT_USER_ID } from '../../constants'
 
 const items = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },

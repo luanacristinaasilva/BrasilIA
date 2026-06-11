@@ -3,7 +3,7 @@ import { Calendar, Clock, ExternalLink, MessageSquare } from 'lucide-react'
 import { useScheduling, useChat } from '../hooks/useScheduling'
 import { MentoringSession } from '../types'
 import ChatCard from '../components/scheduling/ChatCard'
-import { CURRENT_USER_ID } from '../App'
+import { CURRENT_USER_ID } from '../constants'
 
 const statusLabel: Record<string, string> = {
   pending: '⏳ Pendente',

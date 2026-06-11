@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { Sparkles, Users, GitPullRequest, Calendar, TrendingUp, ArrowRight } from 'lucide-react'
 import { useProfiles } from '../hooks/useProfile'
 import { useContributions } from '../hooks/useContributions'
-import { CURRENT_USER_ID } from '../App'
+import { CURRENT_USER_ID } from '../constants'
 
 export default function Home() {
   const { profiles } = useProfiles()
