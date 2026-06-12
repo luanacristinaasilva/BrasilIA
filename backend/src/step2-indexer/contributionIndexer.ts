@@ -1,5 +1,6 @@
 import { Contribution, User } from '../step1-datasource/types'
 import { buildTagIndex, TagIndex, searchByTags } from './tagService'
+import { classifyImpactHeuristic, ImpactScore } from './impactClassifier'
 
 export interface ContributionWithUser extends Contribution {
   user?: {
@@ -8,6 +9,7 @@ export interface ContributionWithUser extends Contribution {
     avatar: string
     role: string
   }
+  impactScore?: ImpactScore  // sinais explicativos da classificação
 }
 
 export interface IndexedData {
@@ -24,7 +26,14 @@ export function buildIndex(contributions: Contribution[], users: User[]): Indexe
     userSkillMap[user.id] = user.skills.map((s) => s.toLowerCase())
   }
 
-  return { contributions, tagIndex, userSkillMap }
+  // ── Reclassifica o impacto de cada contribuição via IA ──
+  // (sobrescreve o campo estático do JSON com a classificação inteligente)
+  const reclassified = contributions.map((c) => {
+    const impactScore = classifyImpactHeuristic(c)
+    return { ...c, impact: impactScore.impact }
+  })
+
+  return { contributions: reclassified, tagIndex, userSkillMap }
 }
 
 export function enrichContributionsWithUsers(

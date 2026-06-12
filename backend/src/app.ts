@@ -6,6 +6,7 @@ import schedulingRoutes from './step5-scheduling/schedulingRoutes'
 import { getContributions, getUsers } from './step1-datasource/dataLoader'
 import { buildIndex, searchContributions, enrichContributionsWithUsers } from './step2-indexer/contributionIndexer'
 import { getTopTags } from './step2-indexer/tagService'
+import { classifyImpactHeuristic } from './step2-indexer/impactClassifier'
 
 const app = express()
 
@@ -65,6 +66,38 @@ app.get('/api/contributions/:id', (req, res) => {
   const users = getUsers()
   const enriched = enrichContributionsWithUsers([contribution], users)
   res.json({ data: enriched[0] })
+})
+
+// ── Endpoint: explicar a classificação de impacto por IA ──
+// GET /api/contributions/:id/classify
+// Retorna os sinais e raciocínio completo da classificação
+app.get('/api/contributions/:id/classify', (req, res) => {
+  const contributions = getContributions()
+  const contribution = contributions.find((c) => c.id === req.params.id)
+  if (!contribution) {
+    res.status(404).json({ error: 'Contribuição não encontrada' })
+    return
+  }
+
+  const impactScore = classifyImpactHeuristic(contribution)
+
+  res.json({
+    contributionId: contribution.id,
+    title: contribution.title,
+    originalImpact: contribution.impact,       // valor estático do JSON
+    classifiedImpact: impactScore.impact,       // valor calculado pela IA
+    score: impactScore.score,
+    confidence: `${Math.round(impactScore.confidence * 100)}%`,
+    signals: impactScore.signals,
+    mode: process.env.OPENAI_API_KEY ? 'openai-gpt4o-mini' : 'heuristic',
+    explanation: `
+Esta contribuição recebeu impacto "${impactScore.impact}" com score ${impactScore.score.toFixed(1)} pontos.
+Sinais detectados:
+${impactScore.signals.map((s, i) => `  ${i + 1}. ${s}`).join('\n')}
+
+Para usar OpenAI GPT-4o em vez da heurística: defina OPENAI_API_KEY no ambiente.
+    `.trim(),
+  })
 })
 
 // Register routers
