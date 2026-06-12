@@ -1,0 +1,222 @@
+name: 🚀 Deploy — GlobalHack-IveSeenThisBefore
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Cloud de destino'
+        required: true
+        default: 'aws'
+        type: choice
+        options: [aws, gcp, both]
+
+env:
+  PROJECT: GlobalHack-IveSeenThisBefore
+  PROJECT_SLUG: globalhack-iveseenthisbefore
+  NODE_VERSION: '20'
+
+jobs:
+  # ── Testes antes do deploy ────────────────────────────
+  test:
+    name: ✅ Testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar testes backend
+        run: npm run test:backend
+
+  # ── Deploy AWS ────────────────────────────────────────
+  deploy-aws:
+    name: ☁️ Deploy AWS
+    needs: test
+    runs-on: ubuntu-latest
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       github.event.inputs.target == 'aws' ||
+       github.event.inputs.target == 'both')
+    environment:
+      name: production-aws
+      url: ${{ steps.get-url.outputs.frontend_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Login no ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build e push imagem backend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f backend/Dockerfile \
+            -t $ECR_REGISTRY/${{ env.PROJECT_SLUG }}-api:$IMAGE_TAG \
+            -t $ECR_REGISTRY/${{ env.PROJECT_SLUG }}-api:latest \
+            .
+          docker push $ECR_REGISTRY/${{ env.PROJECT_SLUG }}-api:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ env.PROJECT_SLUG }}-api:latest
+          echo "IMAGE=$ECR_REGISTRY/${{ env.PROJECT_SLUG }}-api:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Deploy no App Runner
+        run: |
+          SERVICE_ARN=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='${{ env.PROJECT_SLUG }}-api'].ServiceArn" \
+            --output text)
+          if [ -n "$SERVICE_ARN" ]; then
+            aws apprunner start-deployment --service-arn "$SERVICE_ARN"
+            echo "APP_RUNNER_URL=$(aws apprunner describe-service \
+              --service-arn "$SERVICE_ARN" \
+              --query Service.ServiceUrl --output text)" >> $GITHUB_ENV
+          fi
+
+      - name: Build frontend + deploy S3
+        env:
+          VITE_API_URL: https://${{ env.APP_RUNNER_URL }}
+        run: |
+          npx vite build --config frontend/vite.config.ts
+          aws s3 sync frontend/dist/ s3://${{ env.PROJECT_SLUG }}-frontend/ \
+            --delete --cache-control "public,max-age=31536000,immutable" \
+            --exclude "index.html"
+          aws s3 cp frontend/dist/index.html \
+            s3://${{ env.PROJECT_SLUG }}-frontend/index.html \
+            --cache-control "no-cache,no-store,must-revalidate"
+
+      - name: Invalidar cache CloudFront
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${{ env.PROJECT_SLUG }}'].Id" \
+            --output text)
+          if [ -n "$DIST_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" --paths "/*"
+          fi
+
+      - name: Output URLs
+        id: get-url
+        run: |
+          CF_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${{ env.PROJECT_SLUG }}'].DomainName" \
+            --output text)
+          echo "frontend_url=https://${CF_DOMAIN}" >> $GITHUB_OUTPUT
+          echo "### 🌐 Deploy AWS concluído!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend**: https://${CF_DOMAIN}" >> $GITHUB_STEP_SUMMARY
+          echo "- **API**: https://${{ env.APP_RUNNER_URL }}" >> $GITHUB_STEP_SUMMARY
+
+  # ── Deploy GCP ────────────────────────────────────────
+  deploy-gcp:
+    name: ☁️ Deploy GCP
+    needs: test
+    runs-on: ubuntu-latest
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       github.event.inputs.target == 'gcp' ||
+       github.event.inputs.target == 'both')
+    environment:
+      name: production-gcp
+      url: ${{ steps.get-url.outputs.frontend_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker para Artifact Registry
+        run: |
+          gcloud auth configure-docker \
+            ${{ secrets.GCP_REGION || 'us-central1' }}-docker.pkg.dev --quiet
+
+      - name: Build e push imagem backend
+        env:
+          GCP_REGION: ${{ secrets.GCP_REGION || 'us-central1' }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${{ secrets.GCP_PROJECT }}/${{ env.PROJECT_SLUG }}/${{ env.PROJECT_SLUG }}-api"
+          docker build -f backend/Dockerfile \
+            -t "${IMAGE}:${IMAGE_TAG}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:${IMAGE_TAG}"
+          docker push "${IMAGE}:latest"
+          echo "CLOUD_RUN_IMAGE=${IMAGE}:${IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Deploy no Cloud Run
+        id: deploy-run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.PROJECT_SLUG }}-api
+          image: ${{ env.CLOUD_RUN_IMAGE }}
+          region: ${{ secrets.GCP_REGION || 'us-central1' }}
+          flags: >
+            --allow-unauthenticated
+            --port=8080
+            --cpu=1
+            --memory=512Mi
+            --min-instances=0
+            --max-instances=5
+            --set-env-vars=NODE_ENV=production
+
+      - name: Build frontend + deploy Cloud Storage
+        env:
+          VITE_API_URL: ${{ steps.deploy-run.outputs.url }}
+          GCS_BUCKET: ${{ secrets.GCP_PROJECT }}-${{ env.PROJECT_SLUG }}-frontend
+        run: |
+          npx vite build --config frontend/vite.config.ts
+          gsutil -m rsync -r -d frontend/dist/ gs://$GCS_BUCKET/
+          gsutil setmeta -h "Cache-Control:no-cache,no-store,must-revalidate" \
+            gs://$GCS_BUCKET/index.html
+
+      - name: Output URLs
+        id: get-url
+        run: |
+          GCS_BUCKET="${{ secrets.GCP_PROJECT }}-${{ env.PROJECT_SLUG }}-frontend"
+          FRONTEND="https://storage.googleapis.com/${GCS_BUCKET}/index.html"
+          echo "frontend_url=${FRONTEND}" >> $GITHUB_OUTPUT
+          echo "### 🌐 Deploy GCP concluído!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend**: ${FRONTEND}" >> $GITHUB_STEP_SUMMARY
+          echo "- **API**: ${{ steps.deploy-run.outputs.url }}" >> $GITHUB_STEP_SUMMARY

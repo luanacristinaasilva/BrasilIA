@@ -1,0 +1,46 @@
+version: '3.9'
+
+# =========================================================
+# GlobalHack-IveSeenThisBefore — Docker Compose (local)
+# =========================================================
+# Uso: docker compose up --build
+# =========================================================
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: globalhack-iveseenthisbefore-api
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+    ports:
+      - "3001:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: globalhack-iveseenthisbefore-ui
+    environment:
+      - VITE_API_URL=http://localhost:3001
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    name: globalhack-iveseenthisbefore-network
+    driver: bridge
